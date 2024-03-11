@@ -22,22 +22,38 @@ class MatchingService {
     return similarityScore;
   }
 
+  // Group transactions by date and price in order to optimize the matching process
+  groupTransactionsByDateAndPrice(
+    transactions: Transaction[]
+  ): Record<string, Transaction[]> {
+    const grouped: Record<string, Transaction[]> = {};
+
+    transactions.forEach((transaction) => {
+      const key = `${transaction.date}-${transaction.price}`;
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(transaction);
+    });
+
+    return grouped;
+  }
+
   handler(
     orders: Order[],
     transactions: Transaction[]
   ): (Order | Transaction)[][] {
     const matchedRecords: (Order | Transaction)[][] = [];
     const SIMILARITY_THRESHOLD = 0.46;
+    const groupedTransactions =
+      this.groupTransactionsByDateAndPrice(transactions);
 
     orders.forEach((order) => {
-      const matchesForOrder: Transaction[] = [];
+      const orderKey = `${order.date}-${order.price}`;
+      const potentialMatches = groupedTransactions[orderKey] || [];
 
-      transactions.forEach((transaction) => {
-        if (
-          transaction.date === order.date &&
-          transaction.price === order.price
-        ) {
-          // Calculate the similarity score for each field
+      const matchesForOrder: Transaction[] = potentialMatches.filter(
+        (transaction) => {
           const nameScore = this.calculateSimilarityScore(
             transaction.customerName,
             order.customerName
@@ -52,14 +68,10 @@ class MatchingService {
           );
 
           const totalScore = (nameScore + productScore + 2 * idScore) / 4; // Adjusted weighting
-          // Determine if the scores are above the similarity threshold
-          if (totalScore >= SIMILARITY_THRESHOLD) {
-            matchesForOrder.push(transaction);
-          }
+          return totalScore >= SIMILARITY_THRESHOLD;
         }
-      });
+      );
 
-      // If there are matches, group the order with its matched transactions
       if (matchesForOrder.length > 0) {
         matchedRecords.push([order, ...matchesForOrder]);
       }
